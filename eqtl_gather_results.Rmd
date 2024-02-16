@@ -1,0 +1,173 @@
+---
+title: "eqtl_gather_results"
+##output: html_notebook
+---
+
+
+```{r}
+library(arrow)
+library(data.table)
+library(BiocParallel)
+library(qs)
+library(SummarizedExperiment)
+library(stringi)
+library(biomaRt) # for getting dbSNP info about specific SNPs
+```
+
+```{r}
+pat='\\-genomewide\\.cis_qtl_pairs\\.chr1\\.parquet$'
+regfeat <- list.files(path='eqtl_out', pattern=pat, recursive = T, full.names = F)
+regfeat <- stri_replace_all_regex(regfeat, pat, '')
+regs <- unique(stri_split_fixed(regfeat, '.', simplify=T)[,1])
+feats <- unique(stri_split_fixed(regfeat, '.', simplify=T)[,2])
+```
+
+```{r}
+genes <- qread('ref/gencode25.genes.qs')
+gr <- GRanges(genes)
+
+```
+
+
+```{r}
+#riskdt <- fread('ADHD_SNPs_2023.tab', header=T, data.table = F)
+#riskdt$V2 <- NULL
+credt <- NULL
+riskdt <- NULL
+#credt <- fread('GWAS_data/ADHD_credible_variants.tab', header=T, data.table = F)
+fcred='ADHD_credible_variants_hg38.tab'
+frisk='ADHD_table_27_loci_hg38.tab'
+if (file.exists(fcred) & file.exists(frisk)) {
+  credt <- fread(fcred, header=T)
+  riskdt <- fread(frisk, header=T)
+} else {
+    riskloci <- fread('GWAS_data/ADHD_table_27_loci.tab', header=T, data.table = F)
+    library(bigsnpr)
+    options(timeout = 800)
+    liftOver='~/bin/liftOver'
+    system(glue::glue(
+      "{liftOver} --version"
+    ))
+    setnames(credt, c('CHR', 'rsID', 'BP',  'EA', 'NEA','BETA', 'SE', 'P'), 
+                     c('chr', 'rsid', 'pos', 'a0', 'a1','beta', 'se', 'p'))
+    credt$chr <- as.character(credt$chr)
+    setcolorder(credt, c('rsid', 'chr', 'pos', 'a0', 'a1', 'beta', 'se', 'p'))
+    
+    credremap <- snp_modifyBuild(credt, liftOver, from = 'hg19', to = 'hg38')
+    ### all were remapped!
+    setnames(credremap, c('a0', 'a1'), c('EA', 'NEA'))
+    
+    fwrite(credremap, 'ADHD_credible_variants_hg38.tab', sep='\t')
+    
+    credt <- credremap
+    setDT(credt)
+    ##-----------------
+    ## Now risk loci
+    setnames(riskloci, c('Chr.', 'rsID', 'Position',  'A1', 'A2', 'SE', 'P_value'), 
+                       c('chr', 'rsid',  'pos', 'a0', 'a1','se', 'p'))
+    riskloci$chr <- as.character(riskloci$chr)
+    setcolorder(riskloci, c('rsid', 'chr', 'pos', 'a0', 'a1', 'se', 'p'))
+    riskremap <- snp_modifyBuild(riskloci, liftOver, from = 'hg19', to = 'hg38')
+    ### all were remapped!
+    setnames(riskremap, c('a0', 'a1'), c('a1', 'a2'))
+    
+    fwrite(riskremap, 'ADHD_table_27_loci_hg38.tab', sep='\t')
+    riskdt <- riskremap
+    setDT(riskdt)
+}
+```
+
+```{r skip this}
+## no need to use ENSEMBL_MART_SNP, using bigsnpr::snp_modifyBuild() is much faster
+stop("skip this chunk")
+snp_mart <- useEnsembl(biomart="ENSEMBL_MART_SNP", dataset="hsapiens_snp")
+bm <- getBM(attributes=c('refsnp_id', 'chr_name', 'chrom_start', 'chrom_end', 'allele', 'minor_allele', 
+          'minor_allele_freq', 'minor_allele_count', 'ensembl_gene_stable_id', 'ensembl_gene_name',
+          'associated_gene', 'phenotype_name','phenotype_description','clinical_significance'), 
+            filters='snp_filter', values=credt$rsID, mart=snp_mart)
+length(unique(bm$refsnp_id))
+dbsnp <- unique(bm[,c('refsnp_id', 'chr_name', 'chrom_start', 'chrom_end', 'allele', 'minor_allele', 
+          'minor_allele_freq', 'minor_allele_count')])
+dbsnp$chr_name <- paste0('chr', dbsnp$chr_name)
+### - write the SNPs in a file for later use
+mysnps <- dbsnp[, c('refsnp_id', 'chr_name', 'chrom_start', 'chrom_end', 'allele', 'minor_allele')]
+mysnps$loc <- paste0(mysnps$chr_name, ':', mysnps$chrom_start)
+mysnps$loc_id <- paste(mysnps$chr_name, mysnps$chrom_start, substr(mysnps$allele,1,1), mysnps$minor_allele, 
+                      sep=':')
+setnames(mysnps, c('refsnp_id', 'chr_name', 'chrom_start', 'chrom_end'), 
+                 c('rsid', 'chr', 'start', 'end'))
+setcolorder(mysnps, c('rsid', 'loc', 'loc_id', 'chr', 'start', 'end'))
+fwrite(mysnps, 'ADHD_SNPs_2023_wloc.tab', sep='\t', quote=F)
+
+```
+
+```{r}
+#mysnps <- fread('ADHD_SNPs_2023_wloc.tab')
+#gts <- fread('genotypes/riskSNP_genotypes.tab')
+
+```
+
+```{r}
+if (!dir.exists('eqtl_fdr05')) dir.create('eqtl_fdr05')
+#edts <- list() # eqtl data tables per region and 
+fedts <- list(list(), list()) # eqtl data tables per region and
+names(fedts) <- feats
+for (feature in feats) {
+  for (region in regs) {
+     rfprefix=paste0(region, '.', feature)
+     feqtls=paste0('eqtl_fdr05/', rfprefix, '.genomewide_FDR05.qs')
+     if (!file.exists(feqtls)) {
+        pfiles <- list.files(path='eqtl_out', pattern=paste0(rfprefix,'-genomewide\\.cis_qtl_pairs.chr\\d+\\.parquet$'),
+                             recursive = T, full.names = T)
+        cat("   ", length(pfiles), "parquet files found for", rfprefix, "\n")
+        stopifnot(length(pfiles)<=23 & length(pfiles)>0)
+        dlst <- bplapply(pfiles, function(f) {
+           pdt <- read_parquet(f)
+           setDT(pdt)
+           pdt[, fdr:=p.adjust(pval_nominal, "fdr")]
+           pdt <- na.omit(pdt, cols='pval_nominal')
+           setorder(pdt, fdr)
+           sigdt <- pdt[fdr<=0.05,]
+           rm(pdt)
+           return(sigdt)
+         }, BPPARAM=MulticoreParam(16))
+         fedts[[feature]][[region]] <- rbindlist(dlst)
+         cat(" ..saving", feqtls, "\n")
+         qsave(fedts[[feature]][[region]], file=feqtls)
+        } else {
+          cat(" ..loading", feqtls, "\n")
+          fedts[[feature]][[region]] <- qread(feqtls)
+        }
+  }
+}
+```
+
+```{r load back}
+#regions=c('DLPFC', 'HIPPO', 'Caudate')
+#fedts <- list('DLPFC'=qdlpfc, 'HIPPO'=qhippo, 'Amygdala'=qcaudate)
+for (r in regions) {
+  fedts[[r]]$varloc <- sub('^(chr[\\dXYM]+:\\d+):.+', '\\1', edts[[r]]$variant_id, perl=T)
+}
+```
+
+```{r}
+```
+
+```{r}
+dbsnp$varloc <- paste0(dbsnp$chr_name, ':', dbsnp$chrom_start)
+msnps <- list()
+for (r in regions) {
+  edts[[r]]$varloc <- sub('^(chr[\\dXYM]+:\\d+):.+', '\\1', edts[[r]]$variant_id, perl=T)
+  msnps[[r]] <- merge(dbsnp, edts[[r]], by="varloc", all=F)
+  numsnps <- length(unique(msnps[[r]]$refsnp_id))
+  cat(paste0(r, "\t", numsnps), "\n")
+}
+```
+```{r}
+for (r in regions) {
+  numgenes <- length(unique(msnps[[r]]$phenotype_id))
+  numsnps <- length(unique(msnps[[r]]$refsnp_id))
+  cat(paste0(r, "\t", numsnps, "\t", numgenes), "\n")
+}
+```
+
