@@ -8,15 +8,21 @@ library(SummarizedExperiment)
 library(sva)
 library(purrr)
 
-setDTthreads(8)
+setDTthreads(4)
 
-fgrse='mdd_data/rse_gene.lengthScaled.w_tpm.MDD.wPCs_qSVs.n846.qs'
-ftrse='mdd_data/rse_tx.lengthScaled.MDD.wPCs_qSVs.n846.qs'
+### CHANGE rse_gene path here as needed
+fgrse <- './rdata/rse_gene_n114.rda'
+### -------------------------
+
 rses <- list()
-rses[['gene']] <- qread(fgrse)
-rses[['tx']] <- qread(ftrse)
-pd <- as.data.frame(colData(rses[['gene']]))
+fn <- basename(file.path(fgrse))
+fdir <- dirname(file.path(fgrse))
+fpat <- paste0(sub('_gene', '_.+', fn, ignore.case = T), '$')
+frses <- list.files(fdir, pattern=fpat, full.names=T)
+rses <- map(frses, ~get(load(file = .x, verbose=T)))
+names(rses) <- tolower(sub('rse_([^_\\.]+).+','\\1',basename(frses)))
 
+pd <- as.data.frame(colData(rses[['gene']]))
 
 #### Model ####
 pd$Dx <- as.factor(as.character(pd$Dx))
@@ -24,14 +30,11 @@ pd$Dx <- relevel(pd$Dx, ref='Control')
 pd$Region <- as.factor(as.character(pd$Region))
 pd$BrNum <- sub('^Br0', 'Br', pd$BrNum)
 
+### Change the model here:
 modelstr=paste0('~Dx + Age + Sex + ', paste0(grep('^snpPC', colnames(pd), value=T), collapse='+') )
+###
+### IMPORTANT: BrNum will be
 model <- model.matrix(as.formula(modelstr), data = pd)
-#colnames(mod)
-
-#library(edgeR)
-#y <- DGEList(assays(rses[['tx']])$counts)
-#keep <- filterByExpr(y, mod)
-#yflt <- y[keep, ]    # this retains 591,856
 
 #jaffelab::expression_cutoff(assays(rses[['tx']])$tpm)
 #2023-05-21 18:55:36 the suggested expression cutoff is 0.2
@@ -63,7 +66,7 @@ for (feat in features) {
 ## when using risk SNPS: there are no risk snps on chr21, chrX,
 #rse_tx <- rse_tx[! seqnames(rowRanges(rse_tx)) %in% c('chr21', 'chrM', 'chrX', 'chrY'), ]
 
-odir='mdd_data/eqtl'
+odir='/eqtl'
 if (!dir.exists(odir)) dir.create(odir)
 
 regpd <- split(pd, pd$Region)
