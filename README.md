@@ -34,9 +34,9 @@ The second step is to prepare the expression data for tensorQTL. This is done us
 
 ### 3. Run tensorQTL: 03_run_tensorqtl.ipynb
 
-In order to start this notebook, you have to activate the proper `tensorqtl` environment:
+In order to start this notebook, you have to activate the proper `tf` environment:
 
-`conda activate tensorqtl`
+`conda activate tf`
 
 Then jupyter lab can be started with `jupyter lab` command, then in the browser UI that opens, load the `03_run_tensorqtl.ipynb` script. Chunks have to be executed in order. 
 
