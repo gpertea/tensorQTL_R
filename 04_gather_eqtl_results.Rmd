@@ -1,0 +1,136 @@
+---
+title: "eqtl_gather_results"
+##output: html_notebook
+---
+
+
+```{r}
+library(arrow)
+library(data.table)
+library(BiocParallel)
+library(qs)
+library(SummarizedExperiment)
+library(stringi)
+#library(biomaRt) # for getting dbSNP info about specific SNPs
+```
+
+```{r}
+############# CHANGE HERE ############
+## path to parquest files, INCLUDING the dataset prefix (e.g. prefix.gene.cis_qtl_pairs.chr1.parquet)
+parquet_dir = 'mdd_old/tensorQTL_lognorm/eqtl_out/amyg' ## expected there: amyg.gene.cis_qtl_pairs.chr1.parquet
+out_dir = 'eqtl_fdr05' # output directory to write FDR<0.05 eqtl mappings
+
+##############################
+
+dsname=basename(parquet_dir) ## dataset name
+parquet_dir=dirname(parquet_dir) ## this is the directory where the parquet files are located
+pat='cis_qtl_pairs\\.chr1\\.parquet$'
+dsfeat <- list.files(path=parquet_dir, pattern=pat, recursive = T, full.names = F)
+dsfeat <- grep(paste0('^\\Q',dsname,'\\E'), dsfeat, value=T, perl=T)
+dsfeat <- stri_replace_all_regex(dsfeat, pat, '')
+#ds <- unique(stri_split_fixed(regfeat, '.', simplify=T)[,1])
+feats <- unique(stri_split_fixed(dsfeat, '.', simplify=T)[,2])
+if (length(feats)==0) stop("No features found in", parquet_dir, ' for dataset prefix: ', dsname)
+```
+
+```{r}
+if (!dir.exists(out_dir)) dir.create(out_dir)
+fedts <- list() # eqtl data tables per feature
+for (feature in feats) {
+     rfprefix=paste0(dsname, '.', feature)
+     feqtls=paste0(out_dir, '/', rfprefix, '.genomewide_FDR05.qs')
+     if (!file.exists(feqtls)) {
+        pfiles <- list.files(path=parquet_dir, pattern=paste0(rfprefix,'\\.cis_qtl_pairs.chr\\d+\\.parquet$'),
+                             recursive = T, full.names = T)
+        cat("   ", length(pfiles), "parquet files found for", rfprefix, "\n")
+        stopifnot(length(pfiles)<=23 & length(pfiles)>0)
+        dlst <- bplapply(pfiles, function(f) {
+           pdt <- read_parquet(f)
+           setDT(pdt)
+           pdt[, fdr:=p.adjust(pval_nominal, "fdr")]
+           pdt <- na.omit(pdt, cols='pval_nominal')
+           setorder(pdt, fdr)
+           sigdt <- pdt[fdr<=0.05,]
+           rm(pdt)
+           return(sigdt)
+         }, BPPARAM=MulticoreParam(8))
+         fedts[[feature]] <- rbindlist(dlst)
+         cat(" ..saving", feqtls, "\n")
+         qsave(fedts[[feature]], file=feqtls)
+        } else {
+          cat(" ..loading", feqtls, "\n")
+          fedts[[feature]] <- qread(feqtls)
+        }
+}
+```
+
+```{r compare to old results}
+newdt <- fedts[[1]]
+newdt$chr <- stri_split_fixed(newdt$variant_id, ':', simplify=T)[,1]
+newdt$coord <- stri_split_fixed(newdt$variant_id, ':', simplify=T)[,2]
+newdt$mapping <- paste(newdt$phenotype_id, newdt$chr, newdt$coord, sep=':')
+## compare to the last year findings:
+pdt <- qread('mdd_old/tensorQTL_lognorm/eqtl_out_062423/gene_Amygdala_gwnom_FDR05.qs')
+pdt$chr <- stri_split_fixed(pdt$variant_id, ':', simplify=T)[,1]
+pdt$coord <- stri_split_fixed(pdt$variant_id, ':', simplify=T)[,2]
+pdt$mapping <- paste(pdt$phenotype_id, pdt$chr, pdt$coord, sep=':')
+```
+
+```{r}
+## check correlation of pval_nominal
+library(ggplot2)
+
+library(ggplot2)
+
+compare_eqtl_mappings <- function(dt1, dt2, chromosome) {
+  # Filter both tables for the given chromosome
+  dt1_filtered <- dt1[chr == chromosome]
+  dt2_filtered <- dt2[chr == chromosome]
+  
+  # Find shared mappings based on the 'mapping' column
+  shared_mappings <- intersect(dt1_filtered$mapping, dt2_filtered$mapping)
+  
+  # Calculate percentages of overlap
+  overlap_dt1 <- length(shared_mappings) / nrow(dt1_filtered) * 100
+  overlap_dt2 <- length(shared_mappings) / nrow(dt2_filtered) * 100
+  
+  print(paste("Percentage of overlap in dt1:", overlap_dt1, "%"))
+  print(paste("Percentage of overlap in dt2:", overlap_dt2, "%"))
+  
+  # Extract rows with shared mappings
+  shared_dt1 <- dt1_filtered[mapping %in% shared_mappings, .(pval_nominal, fdr, mapping)]
+  shared_dt2 <- dt2_filtered[mapping %in% shared_mappings, .(pval_nominal, fdr, mapping)]
+  
+  # Merge the two datasets based on mapping to align the data
+  merged_data <- merge(shared_dt1, shared_dt2, by = "mapping", suffixes = c("_dt1", "_dt2"))
+  
+  # Compute correlation coefficients
+  cor_pval <- cor(merged_data$pval_nominal_dt1, merged_data$pval_nominal_dt2)
+  cor_fdr <- cor(merged_data$fdr_dt1, merged_data$fdr_dt2)
+  
+  # Create plots for pval_nominal and fdr correlations
+  plot_pval <- ggplot(merged_data, aes(x = pval_nominal_dt1, y = pval_nominal_dt2)) +
+    geom_point(alpha = 0.5) +
+    geom_smooth(method = "lm", color = "blue") +
+    labs(title = paste("Correlation of pval_nominal between datasets on", chromosome, "\nCorrelation coefficient:", round(cor_pval, 3)),
+         x = "pval_nominal dt1", y = "pval_nominal dt2") +
+    theme_minimal()
+  
+  plot_fdr <- ggplot(merged_data, aes(x = fdr_dt1, y = fdr_dt2)) +
+    geom_point(alpha = 0.5) +
+    geom_smooth(method = "lm", color = "red") +
+    labs(title = paste("Correlation of fdr between datasets on", chromosome, "\nCorrelation coefficient:", round(cor_fdr, 3)),
+         x = "fdr dt1", y = "fdr dt2") +
+    theme_minimal()
+  
+  print(plot_pval)
+  print(plot_fdr)
+  
+  return(list(overlap_dt1 = overlap_dt1, overlap_dt2 = overlap_dt2, cor_pval = cor_pval, cor_fdr = cor_fdr))
+}
+
+
+res <- compare_eqtl_mappings(newdt, pdt, 'chr1')
+
+```
+

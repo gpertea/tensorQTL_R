@@ -9,19 +9,21 @@ library(sva)
 
 ###### --- change here file prefixes and paths:
 ## only provide the gene RSE path, the others will be found automatically
-fgrse <- './rdata/rse_gene_n114.rda'
-
+#fgrse <- './rdata/rse_gene_n114.rda'
+fgrse <- 'mdd_exprs_cutoff/rse_gene_Amygdala_n540.rda'
 ## path to SNP PCs file prepared with calc_snpPCs.R
 #fsnp_pcs <- 'genotypes/gt_bsp12_MDS_snpPCs.csv'
-fsnp_pcs <- 'genotypes/gt_bsp12_rIDs_MDS.snpPCs.tab'
+#fsnp_pcs <- 'genotypes/gt_bsp12_rIDs_MDS.snpPCs.tab'
+fsnp_pcs <- NULL ## NULL means they should be embedded already in colData(rse)
 ## note: tensorQTL script should use the matching genotypes/gt_bsp12_rIDs_MDS.bed as input!
 
 #### model with known covariates to use in the eQTL analysis ###
 modelstr='~Sex + Age  + snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5'
+
 ## note that SVA will be used to calculate feature PCs (SVs)
 ## that are not accounted for in this base model
 
-dsname <- 'bsp12rIDs' ## dataset name prefix to use for all output files
+dsname <- 'mdd_amyg' ## dataset name prefix to use for all output files
 ## NOTE: change this if you change the model or any input data!
 
 ## file with genotype ID to RNAseq SAMPLE ID mapping
@@ -36,7 +38,7 @@ fgeno2rna <- NULL
 geno2rna <- NULL
 
 if (!file.exists(fgrse)) stop(paste("Cannot find gene RSE file", fgrse))
-if (!file.exists(fsnp_pcs)) stop(paste("Cannot find gene SNP PCs file", f_snp_pcs))
+if (!is.null(fsnp_pcs) && !file.exists(fsnp_pcs)) stop(paste("Cannot find gene SNP PCs file", f_snp_pcs))
 
 if (!is.null(fgeno2rna) && nchar(fgeno2rna)>1) {
   if (!file.exists(fgeno2rna)) stop(paste("Cannot find genotype ID to RNAseq SAMMPLE ID file", fgeno2rna))
@@ -98,58 +100,64 @@ covar_format <- function(data) {
 
 odir='eqtl_inputs' ## output directory for expression and covariate files
 if (!dir.exists(odir)) dir.create(odir)
-
-snpPCs <- fread(fsnp_pcs, data.table=F)
-if (!is.null(geno2rna)) {
-   genoIDs <- setdiff(geno2rna$genoID, snpPCs$SAMPLE_ID)
-   if (length(genoIDs)>0) {
-     stop("Error: genotype IDs lacking snpPCs: ", paste(genoIDs, collapse=', '))
-   }
+if (!is.null(fsnp_pcs)) {
+  snpPCs <- fread(fsnp_pcs, data.table=F)
+  if (!is.null(geno2rna)) {
+     genoIDs <- setdiff(geno2rna$genoID, snpPCs$SAMPLE_ID)
+     if (length(genoIDs)>0) {
+       stop("Error: genotype IDs lacking snpPCs: ", paste(genoIDs, collapse=', '))
+     }
+  }
+  rownames(snpPCs) <- snpPCs$SAMPLE_ID ## this is the genotype ID
 }
-rownames(snpPCs) <- snpPCs$SAMPLE_ID ## this is the genotype ID
-
 ## use a basic expression cutoff
-EXPR_CUTOFF=0.2
+#EXPR_CUTOFF=0.2
+EXPR_CUTOFF=0 ## already applied for the mdd set
 pd <- NULL ## phenodata used for all RSEs
 model <- NULL
-#modmats <- list()
+
+## optional: reduce frses to only a subset of features
+#frses <- frses[c('gene', 'tx')]
 for (i in 1:length(frses)) {
   rse <- get(load(file = frses[[i]], verbose=F)) # load the RSE
   rm(list=ls(pattern='^rse_'))
   feature <- names(frses)[i]
   ## subset RSE by geno2rna$SAMPLE_ID, which should match colnames(pd)
-  nc <- ncol(rse)
-  if (is.null(geno2rna)) {
-    rse <- rse[ ,colnames(rse) %in% snpPCs$SAMPLE_ID]
-  } else {
-    rse <- rse[ ,colnames(rse) %in% geno2rna$SAMPLE_ID]
-  }
-  if (ncol(rse)<nc/2) {
-    stop("Too many RSE samples do not match the SAMPLE ID with genotype data!")
+  if (!is.null(fsnp_pcs)) {
+    nc <- ncol(rse)
+    if (is.null(geno2rna)) {
+      rse <- rse[ ,colnames(rse) %in% snpPCs$SAMPLE_ID]
+    } else {
+      rse <- rse[ ,colnames(rse) %in% geno2rna$SAMPLE_ID]
+    }
+    if (ncol(rse)<nc/2) {
+      stop("Too many RSE samples do not match the SAMPLE ID with genotype data!")
+    }
   }
   if (is.null(pd)) {
     pd <- as.data.frame(colData(rse))
-    if (is.null(geno2rna)) {
-      ## SAMPLE_ID is the same as genotype ID
-      missIDs <- setdiff(rownames(pd), rownames(snpPCs))
-      if (length(missIDs)>0) {
-        stop("Error: RNA SAMPLE_IDs lacking snpPCs: ", paste(missIDs, collapse=', '))
+    if (!is.null(fsnp_pcs)) {
+      if (is.null(geno2rna)) {
+        ## SAMPLE_ID is the same as genotype ID
+        missIDs <- setdiff(rownames(pd), rownames(snpPCs))
+        if (length(missIDs)>0) {
+          stop("Error: RNA SAMPLE_IDs lacking snpPCs: ", paste(missIDs, collapse=', '))
+        }
+        snpPCs <- snpPCs[rownames(pd), ] #subset/reorder snpPCs
+        stopifnot(identical(rownames(pd), rownames(snpPCs)))
+        pd <- cbind(pd, snpPCs[, grep('^snpPC\\d+', colnames(snpPCs))])
+      } else {
+        ## reorder geno2rna to match order in colnames(pd)
+        ## append genoID to pd
+        rownames(geno2rna) <- geno2rna$SAMPLE_ID
+        geno2rna <- geno2rna[rownames(pd), ]
+        stopifnot(identical(rownames(pd), rownames(geno2rna)))
+        pd <- cbind(pd, data.frame(genoID = geno2rna$genoID))
+        snpPCs <- snpPCs[pd$genoID, ]
+        stopifnot(identical(pd$genoID, rownames(snpPCs)))
+        pd <- cbind(pd, snpPCs[, grep('^snpPC\\d+', colnames(snpPCs))])
       }
-      snpPCs <- snpPCs[rownames(pd), ] #subset/reorder snpPCs
-      stopifnot(identical(rownames(pd), rownames(snpPCs)))
-      pd <- cbind(pd, snpPCs[, grep('^snpPC\\d+', colnames(snpPCs))])
-    } else {
-      ## reorder geno2rna to match order in colnames(pd)
-      ## append genoID to pd
-      rownames(geno2rna) <- geno2rna$SAMPLE_ID
-      geno2rna <- geno2rna[rownames(pd), ]
-      stopifnot(identical(rownames(pd), rownames(geno2rna)))
-      pd <- cbind(pd, data.frame(genoID = geno2rna$genoID))
-      snpPCs <- snpPCs[pd$genoID, ]
-      stopifnot(identical(pd$genoID, rownames(snpPCs)))
-      pd <- cbind(pd, snpPCs[, grep('^snpPC\\d+', colnames(snpPCs))])
     }
-
     ## model (sample) factors and covariates
     model <- model.matrix(as.formula(modelstr), data = pd) [, -1]
     stopifnot(identical(rownames(model), rownames(pd)))
@@ -170,10 +178,12 @@ for (i in 1:length(frses)) {
     }
   }
   ## apply expression cutoff
-  if (feature=='tx') {
-    rse <- rse[rowMeans(assays(rse)$tpm)>EXPR_CUTOFF, ]
-  } else {
-    rse <- rse[rowMeans(assays(rse)$rpkm)>EXPR_CUTOFF, ]
+  if (EXPR_CUTOFF>0) {
+    if (feature=='tx') {
+      rse <- rse[rowMeans(assays(rse)$tpm)>EXPR_CUTOFF, ]
+    } else {
+      rse <- rse[rowMeans(assays(rse)$rpkm)>EXPR_CUTOFF, ]
+    }
   }
   ## discard chromosome Y and M data
   rse <- rse[!grepl('chr[YM]', seqnames(rowRanges(rse))), ]

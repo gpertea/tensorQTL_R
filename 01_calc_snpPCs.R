@@ -31,7 +31,6 @@ if (nchar(plink)==0) stop("plink not found in PATH!")
 ## gtinput file must exists
 if (!file.exists(gtinput)) stop(paste("Cannot find input genotype file:", gtinput))
 
-
 is.vcf=TRUE
 in.fmt=paste('--vcf', gtinput)
 if (grepl('\\.bed$', gtinput)) {
