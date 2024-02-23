@@ -1,0 +1,92 @@
+---
+title: "eQTL results comparison, correlation etc."
+##output: html_notebook
+---
+
+```{r}
+library(data.table)
+library(BiocParallel)
+library(qs)
+library(SummarizedExperiment)
+library(stringi)
+library(ggplot2)
+```
+
+```{r}
+dsname="amyg"
+out_dir = 'eqtl_fdr05' # output directory to write FDR<0.05 eqtl mappings
+feature='gene' # for now
+rfprefix=paste0(dsname, '.', feature)
+feqtls=paste0(out_dir, '/', rfprefix, '.genomewide_FDR05.qs')
+newdt <- qread(feqtls)
+```
+
+
+```{r compare to old results}
+newdt$chr <- stri_split_fixed(newdt$variant_id, ':', simplify=T)[,1]
+newdt$coord <- stri_split_fixed(newdt$variant_id, ':', simplify=T)[,2]
+newdt$mapping <- paste(newdt$phenotype_id, newdt$chr, newdt$coord, sep=':')
+## compare to the last year findings:
+pdt <- qread('mdd_old/tensorQTL_lognorm/eqtl_out_062423/gene_Amygdala_gwnom_FDR05.qs')
+pdt$chr <- stri_split_fixed(pdt$variant_id, ':', simplify=T)[,1]
+pdt$coord <- stri_split_fixed(pdt$variant_id, ':', simplify=T)[,2]
+pdt$mapping <- paste(pdt$phenotype_id, pdt$chr, pdt$coord, sep=':')
+```
+
+```{r}
+## check correlation of pval_nominal
+compare_eqtl_mappings <- function(dt1, dt2, chromosome) {
+  # Filter both tables for the given chromosome
+  dt1_filtered <- dt1[chr == chromosome]
+  dt2_filtered <- dt2[chr == chromosome]
+  
+  # Find shared mappings
+  shared_mappings <- intersect(dt1_filtered$mapping, dt2_filtered$mapping)
+  
+  # Extract rows with shared mappings for comparison
+  shared_dt1 <- dt1_filtered[mapping %in% shared_mappings, .(pval_nominal, fdr, mapping)]
+  shared_dt2 <- dt2_filtered[mapping %in% shared_mappings, .(pval_nominal, fdr, mapping)]
+  
+  # Merge shared mappings by 'mapping' to align values
+  merged_data <- merge(shared_dt1, shared_dt2, by = "mapping", suffixes = c("_dt1", "_dt2"))
+  
+  # Compute correlation coefficients
+  cor_pval <- cor(merged_data$pval_nominal_dt1, merged_data$pval_nominal_dt2, method = "pearson")
+  cor_fdr <- cor(merged_data$fdr_dt1, merged_data$fdr_dt2, method = "pearson")
+  
+  # Plot for pval_nominal
+  plot_pval <- ggplot(merged_data, aes(x = pval_nominal_dt1, y = pval_nominal_dt2)) +
+    geom_point(alpha = 0.5) +
+    scale_x_log10(labels = scales::trans_format("log10", scales::math_format(10^.x))) +
+    scale_y_log10(labels = scales::trans_format("log10", scales::math_format(10^.x))) +
+    labs(title = paste("Log-transformed pval_nominal correlation on", chromosome, "\nCorrelation coefficient:", round(cor_pval, 3)),
+         x = "log10(pval_nominal dt1)", y = "log10(pval_nominal dt2)") +
+    theme_minimal()
+  
+  # Plot for fdr
+  plot_fdr <- ggplot(merged_data, aes(x = fdr_dt1, y = fdr_dt2)) +
+    geom_point(alpha = 0.5) +
+    scale_x_log10(labels = scales::trans_format("log10", scales::math_format(10^.x))) +
+    scale_y_log10(labels = scales::trans_format("log10", scales::math_format(10^.x))) +
+    labs(title = paste("Log-transformed fdr correlation on", chromosome, "\nCorrelation coefficient:", round(cor_fdr, 3)),
+         x = "log10(fdr dt1)", y = "log10(fdr dt2)") +
+    theme_minimal()
+  
+  return(list(overlap = length(shared_mappings), cor_pval = cor_pval, cor_fdr = cor_fdr, 
+              plot_pval = plot_pval, plot_fdr = plot_fdr))
+}
+
+
+res <- compare_eqtl_mappings(newdt, pdt, 'chr1')
+res$plot_pval
+res$plot_fdr
+```
+
+
+```{r}
+res <- compare_eqtl_mappings(newdt, pdt, 'chr2')
+res$plot_pval
+res$plot_fdr
+
+```
+

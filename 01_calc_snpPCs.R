@@ -11,10 +11,7 @@ gtinput='genotypes/gt_bsp12_n114_rIDs.bed' ## if you have a plink bed file inste
 ## set bedout to a different prefix! (to prevent overwriting)
 
 bedout="genotypes/gt_bsp12_rIDs_MDS"
-
-## write the bed files with this bedout prefix
-## change the output prefix as needed
-#bedout=sub('.vcf.gz', '', vcf, fixed=T)
+## write the final/filtered bed files with this bedout prefix
 
 ## QC filter
 qcflt='--geno 0.01 --maf 0.001 --hwe 0.0001'

@@ -7,7 +7,7 @@ library(data.table)
 library(qs)
 library(sva)
 
-###### --- change here file prefixes and paths:
+###### CHANGE HERE - file prefixes and paths:
 ## only provide the gene RSE path, the others will be found automatically
 #fgrse <- './rdata/rse_gene_n114.rda'
 fgrse <- 'mdd_exprs_cutoff/rse_gene_Amygdala_n540.rda'
@@ -25,13 +25,14 @@ modelstr='~Sex + Age  + snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5'
 
 dsname <- 'mdd_amyg' ## dataset name prefix to use for all output files
 ## NOTE: change this if you change the model or any input data!
+##       this is the same with the dsname variable in the python script (03_run_tensorqtl)
 
-## file with genotype ID to RNAseq SAMPLE ID mapping
-## can be set to NULL if the genoID is the same as the RNA SAMPLE_ID
+## file with genotype ID to RNAseq SAMPLE ID mapping, if needed
+## can be set to NULL if the genoID is the same with RNA SAMPLE_ID
 fgeno2rna <- NULL
 #fgeno2rna <- 'genoID_to_sampleID.csv' ## 2 column file with genotype IDs and RNA sample IDs
 ## must be without header, 1st column: genotype IDs, 2nd column: RNA SAMPLE_IDs as in the RSEs
-## the same file must be given to the python script that runs tensorQTL
+## if used, the same file must be given to the python script that runs tensorQTL
 ## NOTE: colnames of the RSEs must match the RNA SAMPLE_IDs !
 #----------------------
 
