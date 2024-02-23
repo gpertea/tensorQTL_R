@@ -19,6 +19,9 @@ The **`bedout`** .bed file prefix will be the one to use as "genotype input" for
 
 Note that besides the QC-ed `bedout` plink genotype data file, the other important output file which is needed for step 2 below is the `snpPCs` file. This will be created as ***`bedout`*****`.snpPCs.tab`**
 
+See `genotypes/gt_bsp12_rIDs_MDS.snpPCs.tab` in this repository for an example of the `snpPCs` file.
+
+
 ### 2. Prepare expression data for tensorQTL: 02_prep_tensorQTL_RSE_input.R
 
 The second step is to prepare the expression data for tensorQTL. This is done using the `02_prep_tensorQTL_RSE_input.R` script. Edit this script to specify the appropriate values for the following variables at the top of the script:
