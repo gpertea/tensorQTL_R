@@ -9,12 +9,11 @@ library(sva)
 
 ###### CHANGE HERE - file prefixes and paths:
 ## only provide the gene RSE path, the others will be found automatically
-#fgrse <- './rdata/rse_gene_n114.rda'
-fgrse <- 'mdd_exprs_cutoff/rse_gene_Amygdala_n540.rda'
+fgrse <- './rdata/rse_gene_n114.rda'
 ## path to SNP PCs file prepared with calc_snpPCs.R
 #fsnp_pcs <- 'genotypes/gt_bsp12_MDS_snpPCs.csv'
-#fsnp_pcs <- 'genotypes/gt_bsp12_rIDs_MDS.snpPCs.tab'
-fsnp_pcs <- NULL ## NULL means they should be embedded already in colData(rse)
+fsnp_pcs <- 'genotypes/gt_bsp12_rIDs_MDS.snpPCs.tab'
+#fsnp_pcs <- NULL ## NULL means they should be embedded already in colData(rse)
 ## note: tensorQTL script should use the matching genotypes/gt_bsp12_rIDs_MDS.bed as input!
 
 #### model with known covariates to use in the eQTL analysis ###

@@ -2,7 +2,7 @@
 ## script to get MDS and snpPCs for a set of genotypes in a VCF.gz input data
 ## on JHPCE, the plink module must be loaded (plink must be available in PATH)!
 library(data.table)
-## change here the path to the genotype file to calculate MDS for:
+## CHANGE HERE the path to the genotype file to calculate MDS for:
 #gtinput='genotypes/gt_bsp12_n114.vcf.gz' ## if you have a vcf
 gtinput='genotypes/gt_bsp12_n114_rIDs.bed' ## if you have a plink bed file instead of vcf
 
