@@ -33,10 +33,11 @@ The second step is to prepare the expression data for tensorQTL. This is done us
 
 In order to start this notebook, you have to activate the proper `tensorqtl` environment:
 
-`conda activate tensorqtl`.
+`conda activate tensorqtl`
 
-Then jupyter lab can be started with `jupyter lab` command, and chunks have to be executed in order. 
-Edit the 2nd cell of the notebook before executing it, to specify the appropriate values for the variables there. 
+Then jupyter lab can be started with `jupyter lab` command, then in the browser UI that opens, load the `03_run_tensorqtl.ipynb` script. Chunks have to be executed in order. 
+
+Edit the 2nd cell of the notebook before executing it, in order to specify the appropriate values for the variables there. 
 
 
 ### 4. Gathering and filtering tensorQTL output: 04_gather_eqtl_results.Rmd
