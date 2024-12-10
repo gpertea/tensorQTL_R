@@ -17,7 +17,7 @@ library(stringi)
 ############# CHANGE HERE ############
 ## path to parquest files, INCLUDING the dataset prefix (e.g. prefix.gene.cis_qtl_pairs.chr1.parquet)
 #dsname="mdd_amyg" ## same dataset name value used in previous steps
-dsname="habenula"
+dsname="claustrum"
 #parquet_dir = 'mdd_old/tensorQTL_lognorm/eqtl_out' ## expected there: amyg.gene.cis_qtl_pairs.chr1.parquet
 parquet_dir = 'eqtl_out' ## expected there: amyg.gene.cis_qtl_pairs.chr1.parquet
 
