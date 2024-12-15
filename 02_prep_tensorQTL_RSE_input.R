@@ -159,7 +159,7 @@ for (i in 1:length(frses)) {
       }
     }
     ## model (sample) factors and covariates
-    model <- model.matrix(as.formula(modelstr), data = pd) [, -1]
+    model <- model.matrix(as.formula(modelstr), data = pd)
     stopifnot(identical(rownames(model), rownames(pd)))
   } # pd and model buing build for the first RSE
   stopifnot(identical(colnames(rse), rownames(pd)))

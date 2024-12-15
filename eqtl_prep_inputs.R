@@ -34,7 +34,7 @@ pd$BrNum <- sub('^Br0', 'Br', pd$BrNum)
 ### Change the model here:
 modelstr=paste0('~Dx + Age + Sex + ', paste0(grep('^snpPC', colnames(pd), value=T), collapse='+') )
 ###
-### IMPORTANT: BrNum will be
+### IMPORTANT: BrNum will be used as the sample ID in the output files
 model <- model.matrix(as.formula(modelstr), data = pd)
 
 #jaffelab::expression_cutoff(assays(rses[['tx']])$tpm)
